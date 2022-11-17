@@ -178,7 +178,11 @@ class ElasticsearchTaskHandler(FileTaskHandler, ExternalLoggingMixin, LoggingMix
         grouped_logs = defaultdict(list)
         for log in logs:
             key = getattr(log, self.host_field, 'default_host')
-            grouped_logs[key].append(log)
+            try:
+                grouped_logs[key].append(log)
+            except TypeError as e:
+                logging.info("Log:"+str(log))
+                raise e
 
         return grouped_logs
 
