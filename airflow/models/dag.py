@@ -2348,7 +2348,7 @@ class DAG(LoggingMixin):
             run_id = DagRun.generate_run_id(run_type, execution_date)
         else:
             raise AirflowException(
-                "Creating DagRun needs either `run_id` or both `run_type` and `execution_date`"
+                f"Could not create DagRun for {self.dag_id}. Creating DagRun needs either `run_id` or both `run_type` and `execution_date`"
             )
 
         if run_id and "/" in run_id:
