@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 import telegram
 import tenacity
@@ -38,7 +39,7 @@ class TelegramHook(BaseHook):
     chat_id can also be provided in the connection using 'host' field in connection.
     Following is the details of a telegram_connection:
     name: 'telegram-connection-name'
-    conn_type: 'http'
+    conn_type: 'telegram'
     password: 'TELEGRAM_TOKEN'
     host: 'chat_id' (optional)
     Examples:
@@ -57,6 +58,23 @@ class TelegramHook(BaseHook):
     :param token: optional telegram API token
     :param chat_id: optional chat_id of the telegram chat/channel/group
     """
+
+    conn_name_attr = "conn_id"
+    default_conn_name = "telegram_default"
+    conn_type = "telegram"
+    hook_name = "Telegram"
+
+    @classmethod
+    def get_ui_field_behaviour(cls) -> dict[str, Any]:
+        """Return custom field behaviour."""
+        return {
+            "hidden_fields": ["schema", "port", "extra", "login"],
+            "relabeling": {
+                "host": "Chat ID",
+                "password": "API token",
+
+            },
+        }
 
     def __init__(
         self,

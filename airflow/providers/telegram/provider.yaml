@@ -53,6 +53,10 @@ integrations:
     logo: /integration-logos/telegram/Telegram.png
     tags: [service]
 
+connection-types:
+  - hook-class-name: airflow.providers.telegram.hooks.telegram.TelegramHook
+    connection-type: telegram
+
 operators:
   - integration-name: Telegram
     python-modules:
