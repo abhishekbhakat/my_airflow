@@ -707,6 +707,17 @@
     "excluded-python-versions": [],
     "state": "ready"
   },
+  "huggingface": {
+    "deps": [
+      "apache-airflow>=2.7.0",
+      "huggingface-hub>=0.12.0"
+    ],
+    "devel-deps": [],
+    "plugins": [],
+    "cross-providers-deps": [],
+    "excluded-python-versions": [],
+    "state": "ready"
+  },
   "imap": {
     "deps": [
       "apache-airflow>=2.7.0"
