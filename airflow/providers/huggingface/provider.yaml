@@ -23,8 +23,7 @@ name: HuggingFace
 description: |
     `Hugging Face <https://huggingface.co/docs>`__
 
-suspended: false
-
+status: ready
 source-date-epoch: 1703251651
 
 versions:
