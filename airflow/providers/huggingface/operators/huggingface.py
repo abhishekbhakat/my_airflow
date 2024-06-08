@@ -34,6 +34,7 @@ class HuggingFaceSpeechRecognitionOperator(BaseOperator):
     """
     Perform automatic speech recognition (ASR or audio-to-text) on the given audio content.
 
+    :param conn_id (`str`): The connection ID to use when connecting to Huggingface
     :param model (`str`, *optional*):
         The model to use for ASR. Can be a model ID hosted on the Hugging Face Hub or a URL to a deployed
         Inference Endpoint. If not provided, the default recommended model for ASR will be used.
@@ -48,12 +49,14 @@ class HuggingFaceSpeechRecognitionOperator(BaseOperator):
     def __init__(
         self,
         *,
+        conn_id: str,
         model: str | None = None,
         audio: str | bytes | None = None,
         inference_params: dict[str, Any] | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
+        self.conn_id = conn_id
         self.model = model
         self.audio = audio
         self.inference_params = inference_params or {}
@@ -61,7 +64,7 @@ class HuggingFaceSpeechRecognitionOperator(BaseOperator):
     @cached_property
     def hook(self) -> HuggingFaceHook:
         """Instantiate and cache the hook."""
-        return HuggingFaceHook()
+        return HuggingFaceHook(conn_id=self.conn_id)
 
     def execute(self, context: Context) -> str:
         """Execute the operator."""
@@ -76,6 +79,7 @@ class HuggingFaceEmbeddingsOperator(BaseOperator):
     """
     Perform embeddings on the given text content.
 
+    :param conn_id (`str`): The connection ID to use when connecting to Huggingface
     :param model (`str`, *optional*):
         The model to use for embeddings. Can be a model ID hosted on the Hugging Face Hub or a URL to a deployed
         Inference Endpoint. If not provided, the default recommended model for embeddings will be used.
@@ -90,12 +94,14 @@ class HuggingFaceEmbeddingsOperator(BaseOperator):
     def __init__(
         self,
         *,
+        conn_id: str,
         model: str | None = None,
         text: str | None = None,
         inference_params: dict[str, Any] | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
+        self.conn_id = conn_id
         self.model = model
         self.text = text
         self.inference_params = inference_params or {}
@@ -103,7 +109,7 @@ class HuggingFaceEmbeddingsOperator(BaseOperator):
     @cached_property
     def hook(self) -> HuggingFaceHook:
         """Instantiate and cache the hook."""
-        return HuggingFaceHook()
+        return HuggingFaceHook(conn_id=self.conn_id)
 
     def execute(self, context: Context) -> np.ndarray:
         """Execute the operator."""
@@ -118,6 +124,7 @@ class HuggingFaceQuestionAnsweringOperator(BaseOperator):
     """
     Perform question answering on the given text content.
 
+    :param conn_id (`str`): The connection ID to use when connecting to Huggingface
     :param model (`str`, *optional*):
         The model to use for question answering. Can be a model ID hosted on the Hugging Face Hub or a URL to a deployed
         Inference Endpoint. If not provided, the default recommended model for question answering will be used.
@@ -134,6 +141,7 @@ class HuggingFaceQuestionAnsweringOperator(BaseOperator):
     def __init__(
         self,
         *,
+        conn_id: str,
         model: str | None = None,
         question: str | None = None,
         context: str | None = None,
@@ -141,6 +149,7 @@ class HuggingFaceQuestionAnsweringOperator(BaseOperator):
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
+        self.conn_id = conn_id
         self.model = model
         self.question = question
         self.context = context
@@ -149,7 +158,7 @@ class HuggingFaceQuestionAnsweringOperator(BaseOperator):
     @cached_property
     def hook(self) -> HuggingFaceHook:
         """Instantiate and cache the hook."""
-        return HuggingFaceHook()
+        return HuggingFaceHook(conn_id=self.conn_id)
 
     def execute(self, context: Context) -> str:
         """Execute the operator."""
@@ -165,6 +174,7 @@ class HuggingFaceSummarizationOperator(BaseOperator):
     """
     Perform summarization on the given text content.
 
+    :param conn_id (`str`): The connection ID to use when connecting to Huggingface
     :param model (`str`, *optional*):
         The model to use for summarization. Can be a model ID hosted on the Hugging Face Hub or a URL to a deployed
         Inference Endpoint. If not provided, the default recommended model for summarization will be used.
@@ -179,12 +189,14 @@ class HuggingFaceSummarizationOperator(BaseOperator):
     def __init__(
         self,
         *,
+        conn_id: str,
         model: str | None = None,
         text: str | None = None,
         inference_params: dict[str, Any] | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
+        self.conn_id = conn_id
         self.model = model
         self.text = text
         self.inference_params = inference_params or {}
@@ -192,7 +204,7 @@ class HuggingFaceSummarizationOperator(BaseOperator):
     @cached_property
     def hook(self) -> HuggingFaceHook:
         """Instantiate and cache the hook."""
-        return HuggingFaceHook()
+        return HuggingFaceHook(conn_id=self.conn_id)
 
     def execute(self, context: Context) -> str:
         """Execute the operator."""
@@ -207,6 +219,7 @@ class HuggingFaceTextGenerationOperator(BaseOperator):
     """
     Given a prompt, generate text using the given model.
 
+    :param conn_id (`str`): The connection ID to use when connecting to Huggingface
     :param model (`str`, *optional*):
         The model to use for text generation. Can be a model ID hosted on the Hugging Face Hub or a URL to a deployed
         Inference Endpoint. If not provided, the default recommended model for text generation will be used.
@@ -259,6 +272,7 @@ class HuggingFaceTextGenerationOperator(BaseOperator):
     def __init__(
         self,
         *,
+        conn_id: str,
         model: str | None = None,
         prompt: str | None = None,
         details: bool = False,
@@ -281,6 +295,7 @@ class HuggingFaceTextGenerationOperator(BaseOperator):
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
+        self.conn_id = conn_id
         self.model = model
         self.prompt = prompt
         self.details = details
@@ -304,7 +319,7 @@ class HuggingFaceTextGenerationOperator(BaseOperator):
     @cached_property
     def hook(self) -> HuggingFaceHook:
         """Instantiate and cache the hook."""
-        return HuggingFaceHook()
+        return HuggingFaceHook(conn_id=self.conn_id)
 
     def execute(self, context: Context) -> str:
         """Execute the operator."""
@@ -335,6 +350,7 @@ class HuggingFaceConversationalOperator(BaseOperator):
     """
     Perform conversational inference on the given text content.
 
+    :param conn_id (`str`): The connection ID to use when connecting to Huggingface
     :param model (`str`, *optional*):
         The model to use for conversational inference. Can be a model ID hosted on the Hugging Face Hub or a URL to a
         deployed Inference Endpoint. If not provided, the default recommended model for conversational inference will
@@ -358,12 +374,14 @@ class HuggingFaceConversationalOperator(BaseOperator):
     def __init__(
         self,
         *,
+        conn_id: str,
         model: str | None = None,
         text: str | None = None,
         inference_params: dict[str, Any] | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
+        self.conn_id = conn_id
         self.model = model
         self.text = text
         self.inference_params = inference_params or {}
@@ -371,7 +389,7 @@ class HuggingFaceConversationalOperator(BaseOperator):
     @cached_property
     def hook(self) -> HuggingFaceHook:
         """Instantiate and cache the hook."""
-        return HuggingFaceHook()
+        return HuggingFaceHook(conn_id=self.conn_id)
 
     def execute(self, context: Context) -> ConversationalOutput:
         """Execute the operator."""
