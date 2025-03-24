@@ -1588,6 +1588,7 @@ def uuid7() -> str:
 
 
 class TaskInstance(Base, LoggingMixin):
+    __allow_unmapped__ = True
     """
     Task instances store the state of a task instance.
 

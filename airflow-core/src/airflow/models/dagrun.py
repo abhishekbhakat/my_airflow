@@ -130,6 +130,7 @@ class DagRun(Base, LoggingMixin):
     """
 
     __tablename__ = "dag_run"
+    __allow_unmapped__ = True
 
     id = Column(Integer, primary_key=True)
     dag_id = Column(StringID(), nullable=False)

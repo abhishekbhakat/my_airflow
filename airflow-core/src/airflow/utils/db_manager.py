@@ -144,19 +144,30 @@ class RunDBManager(LoggingMixin):
     def __init__(self):
         super().__init__()
         self._managers: list[BaseDBManager] = []
-        managers = conf.get("database", "external_db_managers").split(",")
-
-        # Add DB manager specified by auth manager (if any)
-        auth_manager_db_manager = create_auth_manager().get_db_manager()
-        if auth_manager_db_manager and auth_manager_db_manager not in managers:
-            managers.append(auth_manager_db_manager)
-
-        for module in managers:
-            manager = import_string(module)
-            self._managers.append(manager)
+        managers_config = conf.get("database", "external_db_managers").strip()
+        if managers_config:  # Only process if not empty
+            managers = managers_config.split(",")
+            for module in managers:
+                module = module.strip()
+                if module:  # Skip empty strings
+                    manager = import_string(module)
+                    # Only add if it's a proper DB manager class (has metadata)
+                    if hasattr(manager, 'metadata'):
+                        self._managers.append(manager)
+                    else:
+                        self.log.warning(
+                            "Module %s is not a valid DB manager (missing 'metadata' attribute). Skipping.",
+                            module
+                        )
+        else:
+            self.log.info("No external DB managers configured")
 
     def validate(self):
         """Validate the external database managers."""
+        if not self._managers:
+            self.log.info("No external database managers to validate")
+            return
+
         for manager in self._managers:
             RunDBManager._validate(manager)
 
@@ -193,6 +204,8 @@ class RunDBManager(LoggingMixin):
 
     def check_migration(self, session):
         """Check the external database migration."""
+        if not self._managers:
+            return True  # No managers to check, so migration is considered successful
         return_value = []
         for manager in self._managers:
             m = manager(session)
@@ -201,24 +214,36 @@ class RunDBManager(LoggingMixin):
 
     def initdb(self, session):
         """Initialize the external database managers."""
+        if not self._managers:
+            self.log.info("No external database managers configured, skipping initialization")
+            return
         for manager in self._managers:
             m = manager(session)
             m.initdb()
 
     def upgradedb(self, session):
         """Upgrade the external database managers."""
+        if not self._managers:
+            self.log.info("No external database managers configured, skipping upgrade")
+            return
         for manager in self._managers:
             m = manager(session)
             m.upgradedb()
 
     def downgrade(self, session):
         """Downgrade the external database managers."""
+        if not self._managers:
+            self.log.info("No external database managers configured, skipping downgrade")
+            return
         for manager in self._managers:
             m = manager(session)
             m.downgrade()
 
     def drop_tables(self, session, connection):
         """Drop the external database managers."""
+        if not self._managers:
+            self.log.info("No external database managers configured, skipping table dropping")
+            return
         for manager in self._managers:
             if manager.supports_table_dropping:
                 m = manager(session)
