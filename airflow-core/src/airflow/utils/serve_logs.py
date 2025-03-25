@@ -190,8 +190,11 @@ def serve_logs(port=None):
         host = "0.0.0.0"
 
     # Use Gunicorn with Uvicorn workers
+    # Format IPv6 addresses with square brackets to avoid parsing issues
+    bind_address = f"[{host}]:{port}" if host == "::" else f"{host}:{port}"
+
     options = [
-        GunicornOption("bind", f"{host}:{port}"),
+        GunicornOption("bind", bind_address),
         GunicornOption("workers", 2),
         GunicornOption("worker_class", "uvicorn.workers.UvicornWorker"),
     ]
