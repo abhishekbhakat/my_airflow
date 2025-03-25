@@ -24,7 +24,8 @@ import socket
 from collections import namedtuple
 
 import gunicorn.app.base
-from flask import Flask, abort, request, send_from_directory
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
 from jwt.exceptions import (
     ExpiredSignatureError,
     ImmatureSignatureError,
@@ -33,7 +34,7 @@ from jwt.exceptions import (
     InvalidSignatureError,
 )
 from setproctitle import setproctitle
-from werkzeug.exceptions import HTTPException
+from starlette.status import HTTP_403_FORBIDDEN
 
 from airflow.api_fastapi.auth.tokens import JWTValidator, get_signing_key
 from airflow.configuration import conf
@@ -44,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 
 def create_app():
-    flask_app = Flask(__name__, static_folder=None)
+    fastapi_app = FastAPI(title="Airflow Logs Server")
     leeway = conf.getint("webserver", "log_request_clock_grace", fallback=30)
     log_directory = os.path.expanduser(conf.get("logging", "BASE_LOG_FOLDER"))
     log_config_class = conf.get("logging", "logging_config_class")
@@ -59,13 +60,13 @@ def create_app():
             if base_log_folder is not None:
                 log_directory = base_log_folder
                 logger.info(
-                    "Successfully imported user-defined logging config. Flask App will serve log from %s",
+                    "Successfully imported user-defined logging config. FastAPI App will serve log from %s",
                     log_directory,
                 )
             else:
                 logger.warning(
                     "User-defined logging config does not specify 'base_log_folder'. "
-                    "Flask App will use default log directory %s",
+                    "FastAPI App will use default log directory %s",
                     base_log_folder,
                 )
         except Exception as e:
@@ -77,20 +78,21 @@ def create_app():
         audience="task-instance-logs",
     )
 
-    # Prevent direct access to the logs port
-    @flask_app.before_request
-    def validate_pre_signed_url():
+    async def validate_token(request: Request):
         try:
             auth = request.headers.get("Authorization")
             if auth is None:
                 logger.warning("The Authorization header is missing: %s.", request.headers)
-                abort(403)
+                raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Authorization header is missing")
+
             payload = signer.validated_claims(auth)
             token_filename = payload.get("filename")
-            request_filename = request.view_args["filename"]
+            request_filename = request.path_params.get("filename")
+
             if token_filename is None:
                 logger.warning("The payload does not contain 'filename' key: %s.", payload)
-                abort(403)
+                raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Token payload missing filename")
+
             if token_filename != request_filename:
                 logger.warning(
                     "The payload log_relative_path key is different than the one in token:"
@@ -98,18 +100,18 @@ def create_app():
                     request_filename,
                     token_filename,
                 )
-                abort(403)
-        except HTTPException:
-            raise
+                raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Token filename mismatch")
+
+            return payload
         except InvalidAudienceError:
             logger.warning("Invalid audience for the request", exc_info=True)
-            abort(403)
+            raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Invalid audience")
         except InvalidSignatureError:
             logger.warning("The signature of the request was wrong", exc_info=True)
-            abort(403)
+            raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Invalid signature")
         except ImmatureSignatureError:
             logger.warning("The signature of the request was sent from the future", exc_info=True)
-            abort(403)
+            raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Immature signature")
         except ExpiredSignatureError:
             logger.warning(
                 "The signature of the request has expired. Make sure that all components "
@@ -118,7 +120,7 @@ def create_app():
                 get_docs_url("configurations-ref.html#secret-key"),
                 exc_info=True,
             )
-            abort(403)
+            raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Expired signature")
         except InvalidIssuedAtError:
             logger.warning(
                 "The request was issues in the future. Make sure that all components "
@@ -127,16 +129,21 @@ def create_app():
                 get_docs_url("configurations-ref.html#secret-key"),
                 exc_info=True,
             )
-            abort(403)
+            raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Invalid issued at time")
         except Exception:
             logger.warning("Unknown error", exc_info=True)
-            abort(403)
+            raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Unknown error")
 
-    @flask_app.route("/log/<path:filename>")
-    def serve_logs_view(filename):
-        return send_from_directory(log_directory, filename, mimetype="application/json", as_attachment=False)
+    @fastapi_app.get("/log/{filename:path}")
+    async def serve_logs_view(filename: str, token_payload: dict = Depends(validate_token)):
+        file_path = os.path.join(log_directory, filename)
+        if not os.path.isfile(file_path):
+            raise HTTPException(status_code=404, detail="Log file not found")
+        return FileResponse(
+            path=file_path, media_type="application/json", filename=os.path.basename(filename)
+        )
 
-    return flask_app
+    return fastapi_app
 
 
 GunicornOption = namedtuple("GunicornOption", ["key", "value"])
@@ -169,19 +176,26 @@ class StandaloneGunicornApplication(gunicorn.app.base.BaseApplication):
 def serve_logs(port=None):
     """Serve logs generated by Worker."""
     setproctitle("airflow serve-logs")
-    wsgi_app = create_app()
+    app = create_app()
+
+    # Create ASGI app with uvicorn
 
     port = port or conf.getint("logging", "WORKER_LOG_SERVER_PORT")
 
     # If dual stack is available and IPV6_V6ONLY is not enabled on the socket
     # then when IPV6 is bound to it will also bind to IPV4 automatically
     if getattr(socket, "has_dualstack_ipv6", lambda: False)():
-        bind_option = GunicornOption("bind", f"[::]:{port}")
+        host = "::"
     else:
-        bind_option = GunicornOption("bind", f"0.0.0.0:{port}")
+        host = "0.0.0.0"
 
-    options = [bind_option, GunicornOption("workers", 2)]
-    StandaloneGunicornApplication(wsgi_app, options).run()
+    # Use Gunicorn with Uvicorn workers
+    options = [
+        GunicornOption("bind", f"{host}:{port}"),
+        GunicornOption("workers", 2),
+        GunicornOption("worker_class", "uvicorn.workers.UvicornWorker"),
+    ]
+    StandaloneGunicornApplication(app, options).run()
 
 
 if __name__ == "__main__":
