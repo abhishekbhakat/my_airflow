@@ -1594,6 +1594,15 @@ class SchedulerJobRunner(BaseJobRunner, LoggingMixin):
         for b in backfills:
             b.completed_at = now
 
+    def _safe_get_dag(self, dag_model: DagModel, purpose: str, session: Session) -> SerializedDAG | None:
+        """Safely get a DAG, logging errors if loading fails."""
+        try:
+            return _get_current_dag(dag_id=dag_model.dag_id, session=session)
+        except Exception as e:
+            self.log.exception(e)
+            self.log.error("Failed to load DAG '%s' for %s", dag_model.dag_id, purpose)
+            return None
+
     @add_debug_span
     def _create_dag_runs(self, dag_models: Collection[DagModel], session: Session) -> None:
         """Create a DAG run and update the dag_model to control if/when the next DAGRun should be created."""
@@ -1625,7 +1634,7 @@ class SchedulerJobRunner(BaseJobRunner, LoggingMixin):
         )
 
         for dag_model in dag_models:
-            dag = _get_current_dag(dag_id=dag_model.dag_id, session=session)
+            dag = self._safe_get_dag(dag_model, "DagRun creation", session)
             if not dag:
                 self.log.error("DAG '%s' not found in serialized_dag table", dag_model.dag_id)
                 continue
@@ -1688,7 +1697,7 @@ class SchedulerJobRunner(BaseJobRunner, LoggingMixin):
         }
 
         for dag_model in dag_models:
-            dag = _get_current_dag(dag_id=dag_model.dag_id, session=session)
+            dag = self._safe_get_dag(dag_model, "dataset-triggered DagRun creation", session)
             if not dag:
                 self.log.error("DAG '%s' not found in serialized_dag table", dag_model.dag_id)
                 continue

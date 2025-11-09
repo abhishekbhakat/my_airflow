@@ -34,6 +34,7 @@ from urllib.parse import urlsplit
 
 import attrs
 import jinja2
+import pendulum
 from dateutil.relativedelta import relativedelta
 
 from airflow import settings
@@ -43,7 +44,7 @@ from airflow.exceptions import (
     RemovedInAirflow4Warning,
     TaskNotFound,
 )
-from airflow.sdk import TaskInstanceState, TriggerRule
+from airflow.sdk import TaskInstanceState, TriggerRule, timezone
 from airflow.sdk.bases.operator import BaseOperator
 from airflow.sdk.definitions._internal.node import validate_key
 from airflow.sdk.definitions._internal.types import NOTSET, ArgNotSet
@@ -144,6 +145,11 @@ def _config_bool_factory(section: str, key: str) -> Callable[[], bool]:
     from airflow.configuration import conf
 
     return functools.partial(conf.getboolean, section, key)
+
+
+def _contains_jinja(x: str) -> bool:
+    """Check if a string contains Jinja2 template syntax."""
+    return isinstance(x, str) and ("{{" in x or "{%" in x)
 
 
 def _config_int_factory(section: str, key: str) -> Callable[[], int]:
@@ -693,6 +699,115 @@ class DAG:
         # We validate owner links on set, but since it's a dict it could be mutated without calling the
         # setter. Validate again here
         self._validate_owner_links(None, self.owner_links)
+
+        # Parse-time validation for DAG template fields and datetime values
+        for task in self.tasks:
+            tsd = getattr(task, "start_date", None)
+            ted = getattr(task, "end_date", None)
+            if tsd is not None and not (isinstance(tsd, str) and _contains_jinja(tsd)):
+                _ = timezone.convert_to_utc(tsd)
+            if ted is not None and not (isinstance(ted, str) and _contains_jinja(ted)):
+                _ = timezone.convert_to_utc(ted)
+
+        for task in self.tasks:
+            args = getattr(task, "args", None)
+            if args is None:
+                continue
+
+            has_templated_in_args = False
+            if isinstance(args, (list, tuple)):
+                for a in args:
+                    if isinstance(a, str) and _contains_jinja(a):
+                        has_templated_in_args = True
+                        break
+            elif isinstance(args, dict):
+                for v in args.values():
+                    if isinstance(v, str) and _contains_jinja(v):
+                        has_templated_in_args = True
+                        break
+
+            if has_templated_in_args:
+                tf = getattr(task, "template_fields", ())
+                if isinstance(tf, str) or (isinstance(tf, (list, tuple)) and "args" not in tf):
+                    from airflow.exceptions import SerializationError
+
+                    raise SerializationError(
+                        f"Task {task.task_id!r} uses templated values in args but template_fields is misconfigured "
+                        f"(got {type(tf).__name__}) or does not include 'args'."
+                    )
+            if isinstance(args, (list, tuple)):
+                from argparse import ArgumentParser
+
+                parser = ArgumentParser(add_help=False)
+                parser.add_argument("--start_date")
+                parser.add_argument("--end_date")
+                s_args = [a for a in args if isinstance(a, str)]
+                ns, _ = parser.parse_known_args(s_args)
+                if ns.start_date is not None:
+                    self._dry_render_datetime_template(ns.start_date, "start_date", task.task_id)
+                if ns.end_date is not None:
+                    self._dry_render_datetime_template(ns.end_date, "end_date", task.task_id)
+            elif isinstance(args, dict):
+                if "start_date" in args:
+                    self._dry_render_datetime_template(args["start_date"], "start_date", task.task_id)
+                if "end_date" in args:
+                    self._dry_render_datetime_template(args["end_date"], "end_date", task.task_id)
+
+    def _simulate_parse_time_data_interval(self) -> tuple[pendulum.DateTime, pendulum.DateTime]:
+        """Simulate data interval for parsing-time using DAG timetable if available."""
+        now = cast("pendulum.DateTime", timezone.utcnow())
+        try:
+            inferred = self.timetable.infer_manual_data_interval(run_after=now)
+            if inferred and hasattr(inferred, "start") and hasattr(inferred, "end"):
+                start = timezone.coerce_datetime(inferred.start)
+                end = timezone.coerce_datetime(inferred.end)
+                if start and end:
+                    return start, end
+        except Exception:
+            pass
+        return now - timedelta(days=1), now
+
+    def _create_parse_time_context(self) -> dict[str, Any]:
+        from airflow.sdk.execution_time.context import MacrosAccessor
+
+        data_interval_start, data_interval_end = self._simulate_parse_time_data_interval()
+        logical_date = data_interval_end
+        return {
+            "macros": MacrosAccessor(),
+            "data_interval_start": data_interval_start,
+            "data_interval_end": data_interval_end,
+            "execution_date": logical_date,
+            "logical_date": logical_date,
+        }
+
+    def _dry_render_datetime_template(self, value: Any, field_name: str, task_id: str | None) -> datetime:
+        """
+        Dry-render potentially templated datetime value using DAG env/context.
+
+        :raises: Exception on render/parse failure.
+        """
+        if isinstance(value, (pendulum.DateTime, datetime)):
+            return timezone.coerce_datetime(value)
+        if isinstance(value, (int, float)):
+            v = float(value)
+            if v > 1e12:
+                v /= 1000.0
+            return timezone.from_timestamp(v)
+        if isinstance(value, str):
+            if "{{" in value or "{%" in value:
+                env = self.get_template_env(force_sandboxed=True)
+                template = env.from_string(value)
+                _ctx = self._create_parse_time_context()
+                from airflow.sdk.definitions.context import render_template_to_string
+
+                rendered = render_template_to_string(template, cast("Context", _ctx))
+            else:
+                rendered = value
+        else:
+            rendered = value
+
+        tz = self.timezone if hasattr(self, "timezone") else "UTC"
+        return timezone.coerce_datetime(cast("datetime", pendulum.parse(rendered, tz=tz)))
 
     def validate_setup_teardown(self):
         """

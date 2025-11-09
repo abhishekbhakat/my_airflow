@@ -678,6 +678,11 @@ class BaseSerialization:
             attrname, var, instance
         )
 
+    @staticmethod
+    def _contains_jinja(x: str) -> bool:
+        """Check if a string contains Jinja2 template syntax."""
+        return isinstance(x, str) and ("{{" in x or "{%" in x)
+
     @classmethod
     def serialize_to_json(
         cls,
@@ -2107,6 +2112,9 @@ class SerializedBaseOperator(DAGNode, BaseSerialization):
         elif field_name == "resources":
             return Resources.from_dict(value) if value is not None else None
         elif field_name.endswith("_date"):
+            # Skip deserialization for strings containing Jinja templates
+            if isinstance(value, str) and cls._contains_jinja(value):
+                return value  # Keep as-is for runtime rendering
             return cls._deserialize_datetime(value) if value is not None else None
         else:
             # For all other fields, return as-is (strings, ints, bools, etc.)
@@ -2585,7 +2593,11 @@ class SerializedDAG(BaseSerialization):
             elif k == "dagrun_timeout":
                 v = cls._deserialize_timedelta(v)
             elif k.endswith("_date"):
-                v = cls._deserialize_datetime(v)
+                # Skip deserialization for strings containing Jinja templates
+                if isinstance(v, str) and cls._contains_jinja(v):
+                    pass  # Keep as-is for runtime rendering
+                else:
+                    v = cls._deserialize_datetime(v)
             elif k == "edge_info":
                 # Value structure matches exactly
                 pass
@@ -3064,16 +3076,37 @@ class SerializedDAG(BaseSerialization):
 
     @cached_property
     def _time_restriction(self) -> TimeRestriction:
-        start_dates = [t.start_date for t in self.tasks if t.start_date]
-        if self.start_date is not None:
+        # Filter out string values containing Jinja templates - they will be rendered at runtime
+        start_dates = [
+            t.start_date
+            for t in self.tasks
+            if t.start_date is not None
+            and not (isinstance(t.start_date, str) and self._contains_jinja(t.start_date))
+        ]
+        if self.start_date is not None and not (
+            isinstance(self.start_date, str) and self._contains_jinja(self.start_date)
+        ):
             start_dates.append(self.start_date)
         earliest = None
         if start_dates:
             earliest = coerce_datetime(min(start_dates))
-        latest = coerce_datetime(self.end_date)
-        end_dates = [t.end_date for t in self.tasks if t.end_date]
+
+        latest = None
+        if self.end_date is not None and not (
+            isinstance(self.end_date, str) and self._contains_jinja(self.end_date)
+        ):
+            latest = coerce_datetime(self.end_date)
+
+        end_dates = [
+            t.end_date
+            for t in self.tasks
+            if t.end_date is not None
+            and not (isinstance(t.end_date, str) and self._contains_jinja(t.end_date))
+        ]
         if len(end_dates) == len(self.tasks):  # not exists null end_date
-            if self.end_date is not None:
+            if self.end_date is not None and not (
+                isinstance(self.end_date, str) and self._contains_jinja(self.end_date)
+            ):
                 end_dates.append(self.end_date)
             if end_dates:
                 latest = coerce_datetime(max(end_dates))

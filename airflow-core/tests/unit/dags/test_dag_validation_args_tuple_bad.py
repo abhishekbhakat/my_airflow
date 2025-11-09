@@ -14,28 +14,24 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
 from __future__ import annotations
 
-# We don't want to `import *` here to avoid the risk of making adding too much to Public python API
-from airflow.sdk._shared.timezones.timezone import (
-    coerce_datetime,
-    convert_to_utc,
-    datetime,
-    from_timestamp,
-    make_naive,
-    parse,
-    utc,
-    utcnow,
-)
+from datetime import datetime
 
-__all__ = [
-    "coerce_datetime",
-    "convert_to_utc",
-    "datetime",
-    "from_timestamp",
-    "make_naive",
-    "parse",
-    "utc",
-    "utcnow",
-]
+from airflow import DAG
+from airflow.models.baseoperator import BaseOperator
+
+
+class TupOp(BaseOperator):
+    template_fields = ("args",)
+
+    def __init__(self, *, args=None, **kwargs):
+        super().__init__(**kwargs)
+        self.args = args
+
+
+with DAG(dag_id="args_tuple_bad", start_date=datetime(2025, 1, 1), schedule="@daily"):
+    TupOp(
+        task_id="t",
+        args=("--start_date", "{{ 'not-a-date' }}"),
+    )

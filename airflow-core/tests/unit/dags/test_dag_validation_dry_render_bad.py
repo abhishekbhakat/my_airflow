@@ -14,28 +14,35 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
 from __future__ import annotations
 
-# We don't want to `import *` here to avoid the risk of making adding too much to Public python API
-from airflow.sdk._shared.timezones.timezone import (
-    coerce_datetime,
-    convert_to_utc,
-    datetime,
-    from_timestamp,
-    make_naive,
-    parse,
-    utc,
-    utcnow,
-)
+from datetime import datetime
 
-__all__ = [
-    "coerce_datetime",
-    "convert_to_utc",
-    "datetime",
-    "from_timestamp",
-    "make_naive",
-    "parse",
-    "utc",
-    "utcnow",
-]
+from airflow import DAG
+from airflow.models.baseoperator import BaseOperator
+
+
+class DryRenderOperator(BaseOperator):
+    # Correct tuple: args will be templated and validated at parse time by our guardrails.
+    template_fields = ("args",)
+
+    def __init__(self, *, args=None, **kwargs):
+        super().__init__(**kwargs)
+        self.args = args or []
+
+
+with DAG(
+    dag_id="dry_render_bad_dag",
+    start_date=datetime(2025, 8, 1),
+    schedule="@daily",
+    catchup=False,
+):
+    broken = DryRenderOperator(
+        task_id="broken",
+        args=[
+            "--start_date",
+            "{{ 'not-a-date' }}",
+            "--end_date",
+            "{{ 'still-not-a-date' }}",
+        ],
+    )
