@@ -2112,8 +2112,8 @@ class SerializedBaseOperator(DAGNode, BaseSerialization):
             return None
         elif field_name == "resources":
             return Resources.from_dict(value) if value is not None else None
-        elif field_name.endswith("_date"):
-            # Skip deserialization for strings containing Jinja templates
+        elif field_name in ("start_date", "end_date"):
+            # Skip deserialization for strings containing Jinja templates only for top-level date fields
             if isinstance(value, str) and cls._contains_jinja(value):
                 return value  # Keep as-is for runtime rendering
             return cls._deserialize_datetime(value) if value is not None else None
@@ -2595,8 +2595,8 @@ class SerializedDAG(BaseSerialization):
                 v = cls._deserialize_timezone(v)
             elif k == "dagrun_timeout":
                 v = cls._deserialize_timedelta(v)
-            elif k.endswith("_date"):
-                # Skip deserialization for strings containing Jinja templates
+            elif k in ("start_date", "end_date"):
+                # Skip deserialization for strings containing Jinja templates only for top-level date fields
                 if isinstance(v, str) and cls._contains_jinja(v):
                     pass  # Keep as-is for runtime rendering
                 else:
