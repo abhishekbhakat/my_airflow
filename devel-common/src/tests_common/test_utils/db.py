@@ -147,6 +147,7 @@ def initial_db_init():
                 # classes
                 db.downgrade(to_revision="5f2621c13b39")
                 db.upgradedb(to_revision="head")
+                _bootstrap_dagbag()
             else:
                 # Just create the tables so they are there
                 with create_session() as session:
@@ -165,7 +166,8 @@ def initial_db_init():
 
         get_auth_manager().init()
 
-    _bootstrap_dagbag()
+        if os.getenv("TEST_GROUP") != "providers":
+            _bootstrap_dagbag()
 
 
 def parse_and_sync_to_db(folder: Path | str, include_examples: bool = False):
